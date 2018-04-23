@@ -32,7 +32,7 @@ class Base(object):
         url=self.base_url+"/dashboard/getColumns.do"
         self.sql='select * from {}'.format(self.table)
         data={
-            'datasourceId':'3',
+            'datasourceId':'2', #jdbc存放的id 
             'query': '{"sql":"'+self.sql+'"}',
             'reload': 'false'}
         response = requests.post(url,data=data,headers=self.headers)
@@ -43,9 +43,8 @@ class DataSet(Base):
 
     def __init__(self,table,dataset_name):
         self.table = table
-        Base.__init__(self,self.table)
         self.dataset_name = dataset_name
-        
+        Base.__init__(self,self.table)
     
     def create_dataset_json(self):
         query={"sql":self.sql}
@@ -66,7 +65,7 @@ class DataSet(Base):
                     "expressions": [],
                     "filters": [],
                     "schema":schema,
-                    "datasource": 3, 
+                    "datasource": 2, 
                     "select":select,
                     "query":query
                     },
@@ -85,13 +84,16 @@ class DataSet(Base):
 
 class Widget(DataSet):
 
-    def __init__(self,table,widget_name,dataset_name):
+    def __init__(self,table,widget_name,dataset_name,keys,values,aggregate_type):
         self.widget_name = widget_name
         self.table = table
         self.dataset_name = dataset_name
-        Base.__init__(self,self.table,self.dataset_name)
+        self.keys = keys
+        self.values = values
+        self.aggregate_type = aggregate_type
+        DataSet.__init__(self,self.table,self.dataset_name)
 
-    def create_pie_widget_json(self,keys,values,aggregate_type):
+    def create_pie_widget_json(self):
         config={
             "option": {
                 "legendShow": True
@@ -99,7 +101,7 @@ class Widget(DataSet):
             "chart_type": "pie",
             "keys": [
                 {
-                    "col": keys,
+                    "col": self.keys,
                     "type": "eq",
                     "values": [],
                     "sort": "asc",
@@ -112,8 +114,8 @@ class Widget(DataSet):
                     "name": "",
                     "cols": [
                         {
-                            "col": values,
-                            "aggregate_type": aggregate_type
+                            "col": self.values,
+                            "aggregate_type": self.aggregate_type
                         }
                     ],
                     "series_type": "pie",
@@ -126,7 +128,7 @@ class Widget(DataSet):
             "data":{
                     "expressions": [],
                     "filters": [],
-                    "datasource": 9, 
+                    "datasetId": 4,
                     "config":config
                 },
                 "name": self.widget_name, 
@@ -138,8 +140,8 @@ class Widget(DataSet):
         return _json
 
     def create_pie_widget(self):
-        url= self.base_url+'/dashboard/saveNewWidget.do'
-        json=self.create_pie_widget_json()
+        url = self.base_url+'/dashboard/saveNewWidget.do'
+        json = self.create_pie_widget_json()
         response = requests.post(url,data=json,headers=self.headers)
         print(response.text)
 
@@ -159,5 +161,7 @@ class Widget(DataSet):
 # 通过get请求返回的文本值
 
 if __name__ == '__main__':
-    wg=Widget('OBS_MASTER_REC','OBS_MASTER_REC','OBS_MASTER_REC')
+    # ds=DataSet('OBS_MASTER_REC','OBS_MASTER_REC')
+    # ds.create_dataset()
+    wg=Widget('OBS_MASTER_REC','OBS_MASTER_REC','OBS_MASTER_REC','VISIT_TYPE','CASE_OBJECT_ID','count')
     wg.create_pie_widget()
