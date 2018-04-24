@@ -4,8 +4,10 @@
 import requests
 import json
 import uuid
+import pymysql
 
 
+datasourceId=3
 
 class Base(object):
     user={
@@ -14,11 +16,13 @@ class Base(object):
     }
     base_url='http://localhost:8080'
     category_name="默认分类"
+    db = pymysql.connect("localhost","root","111111","cboard",charset='utf8' )
 
     def __init__(self,table):
         self.table = table
         self.get_headers()
         self.get_column()
+        self.con = self.db
     
     def get_headers(self):
         response = requests.post(self.base_url+'/login',data=self.user, allow_redirects=False)
@@ -32,7 +36,7 @@ class Base(object):
         url=self.base_url+"/dashboard/getColumns.do"
         self.sql='select * from {}'.format(self.table)
         data={
-            'datasourceId':'2', #jdbc存放的id 
+            'datasourceId':str(datasourceId), #jdbc存放的id 
             'query': '{"sql":"'+self.sql+'"}',
             'reload': 'false'}
         response = requests.post(url,data=data,headers=self.headers)
@@ -41,13 +45,13 @@ class Base(object):
 
 class DataSet(Base):
 
-    def __init__(self,table,dataset_name):
+    def __init__(self,table,dataset_name=None):
         self.table = table
-        self.dataset_name = dataset_name
+        self.dataset_name =dataset_name if dataset_name else table 
         Base.__init__(self,self.table)
     
     def create_dataset_json(self):
-        query={"sql":self.sql}
+        self.query={"sql":self.sql}
         select=self.column
         dimension_list=[]
         measure_list=[]
@@ -59,15 +63,15 @@ class DataSet(Base):
             }
             dimension_list.append(tmp)
             measure_list.append(tmp)
-        schema={"dimension":dimension_list,"measure":measure_list}
+        self.schema={"dimension":dimension_list,"measure":measure_list}
         data={
                 "data":{
                     "expressions": [],
                     "filters": [],
-                    "schema":schema,
-                    "datasource": 2, 
+                    "schema":self.schema,
+                    "datasource": datasourceId, 
                     "select":select,
-                    "query":query
+                    "query":self.query
                     },
                 "name": self.dataset_name, 
                 "categoryName": self.category_name
@@ -77,14 +81,26 @@ class DataSet(Base):
         }
         return _json
 
+    def create_dataset_db(self):
+        self.create_dataset_json()
+        data = {"schema":self.schema,"datasource":datasourceId,"query":self.query,"filters":[],"expressions":[]}
+        sql = "INSERT INTO `cboard`.`dashboard_dataset` (`user_id`, `category_name`, `dataset_name`, `data_json`) VALUES ('1', '{}','{}','{}');".format(self.category_name,self.dataset_name,json.dumps(data))
+        cursor = self.con.cursor()
+        cursor.execute(sql)
+        rs = cursor.fetchall()
+        self.con.commit()
+        return cursor.lastrowid
+
     def create_dataset(self):
         url= self.base_url+'/dashboard/saveNewDataset.do'
         json=self.create_dataset_json()
         response = requests.post(url,data=json,headers=self.headers)
+        print(response.text)
 
 class Widget(DataSet):
 
-    def __init__(self,table,widget_name,dataset_name,keys,values,aggregate_type):
+    def __init__(self,table,widget_name,
+        dataset_name,keys,values,aggregate_type):
         self.widget_name = widget_name
         self.table = table
         self.dataset_name = dataset_name
@@ -139,29 +155,64 @@ class Widget(DataSet):
         }
         return _json
 
+    def create_line_widget_json(self):
+        pass
+    
+    def create_table_widget(self):
+        pass
+
     def create_pie_widget(self):
         url = self.base_url+'/dashboard/saveNewWidget.do'
         json = self.create_pie_widget_json()
         response = requests.post(url,data=json,headers=self.headers)
         print(response.text)
 
-# json: {"name":"OBS_MASTER_REC诊断类型人数所占比1","categoryName":"默认分类","data":{"config":{"option":{"legendShow":true},"chart_type":"pie","keys":[{"col":"VISIT_TYPE","type":"eq","values":[],"sort":"asc","id":"219e0fda-1f74-4761-92a3-66d82f961d76"}],"groups":[],"values":[{"name":"","cols":[{"col":"CASE_OBJECT_ID","aggregate_type":"count"},{"col":"CASE_OBJECT_ID","aggregate_type":"distinct"}],"series_type":"pie","type":"value"}],"filters":[]},"datasetId":9,"expressions":[],"filterGroups":[]}}
-# son: {"name":"OBS_MASTER_REC诊断类型人数所占比","categoryName":"默认分类","data":{"config":{"option":{"legendShow":true},"chart_type":"pie","keys":[{"col":"VISIT_TYPE","type":"eq","values":[],"sort":"asc","id":"219e0fda-1f74-4761-92a3-66d82f961d76"}],"groups":[],"values":[{"name":"","cols":[{"col":"CASE_OBJECT_ID","aggregate_type":"count"}],"series_type":"pie","type":"value"}],"filters":[]},"datasetId":9,"expressions":[],"filterGroups":[]}}
-# json2={
-#     'json':'{"name":"visit_type3","categoryName":"默认分类","data":{"config":{"option":{"legendShow":true},"chart_type":"line","keys":[{"col":"VISIT_TYPE","type":"eq","values":[],"sort":"asc","id":"607e63c1-4ae6-4dee-b6c5-1bfe962c5bb5"}],"groups":[],"values":[{"name":"","cols":[{"col":"VISIT_TYPE","aggregate_type":"distinct"}],"series_type":"pie","type":"value"}],"filters":[]},"datasetId":2,"expressions":[],"filterGroups":[]}}'
-# }
-# json3={'json':'{"layout":{"rows":[{"type":"widget","widgets":[{"name":"图表名称3","width":12,"widgetId":1}]}]},"categoryId":null,"name":"visit_type2"}'}
 
-# 对于我们工作中的自己人,我们一般会使用别的验证,而不是csrf_token验证
-# response = requests.post('http://localhost:8080/dashboard/saveNewDataset.do',data=json,headers=header)
-# response2 = requests.post('http://localhost:8080/dashboard/saveNewWidget.do',data=json2,headers=header)
-# response = requests.post('http://localhost:8080/login',data=user, allow_redirects=False)
-# print(response.headers)
-#response = requests.post('http://localhost:8080/dashboard/saveNewBoard.do',data=json3,headers=header)
-# 通过get请求返回的文本值
+class Board(Base):
+    
+    def __init__(self,table,board_name,widget_id_list):
+        self.table = table
+        self.board_name = board_name
+        self.widget_id_list = widget_id_list
+        Base.__init__(self,self.table)
+
+    def create_board_json(self):
+        widgets_list = list()
+        for x in self.widget_id_list:
+            tmp = {
+                "name": "图表"+str(x),
+                "width": 12,
+                "widgetId": x
+            }
+            widgets_list.append(tmp)
+
+        data={
+            "layout":{
+                    "rows": [{
+                        "type":"widget",
+                        "widgets":widgets_list
+                    }],
+                    
+                },
+                "name": self.board_name, 
+                "categoryId": 'null'
+        }
+        _json = {
+            'json':json.dumps(data)
+        }
+        return _json
+    
+    def create_board(self):
+        url = self.base_url+'/dashboard/saveNewBoard.do'
+        json = self.create_board_json()
+        response = requests.post(url,data=json,headers=self.headers)
+        print(response.text)
+
 
 if __name__ == '__main__':
-    # ds=DataSet('OBS_MASTER_REC','OBS_MASTER_REC')
-    # ds.create_dataset()
-    wg=Widget('OBS_MASTER_REC','OBS_MASTER_REC','OBS_MASTER_REC','VISIT_TYPE','CASE_OBJECT_ID','count')
-    wg.create_pie_widget()
+    ds=DataSet('PRESCRIPTION_RECORD')
+    ds.create_dataset_db()
+    # wg=Widget('OBS_MASTER_REC','OBS_MASTER_REC','OBS_MASTER_REC','VISIT_TYPE','CASE_OBJECT_ID','count')
+    # wg.create_pie_widget()
+    # bd=Board('OBS_MASTER_REC','medical_test',[6,7])
+    # bd.create_board()
